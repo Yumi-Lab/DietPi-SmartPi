@@ -25,10 +25,31 @@ on:
         default: "25"
 
 jobs:
+  check:
+    name: Resolve base release
+    runs-on: ubuntu-latest
+    outputs:
+      base_tag: ${{ steps.check.outputs.base_tag }}
+    steps:
+      - name: Resolve base release
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ github.event.inputs.release_tag }}"
+          if [[ -z "${TAG}" ]]; then
+            TAG=$(gh release view --repo Yumi-Lab/SmartPi-armbian --json tagName --jq .tagName)
+          fi
+          echo "base_tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Base release: ${TAG}"
+
   convert:
-    name: Convert ${{ github.event.inputs.artifact_filter }} to DietPi
+    name: Convert to DietPi (base ${{ needs.check.outputs.base_tag }})
     runs-on: ubuntu-latest
     timeout-minutes: 180
+    needs: check
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -38,18 +59,17 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y qemu-user-static binfmt-support xz-utils parted zerofree
 
-      - name: Download base image from latest release
+      - name: Download base image
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p work && cd work
-          TAG="${{ github.event.inputs.release_tag }}"
-          if [[ -z "${TAG}" ]]; then
-            TAG=$(gh release view --repo Yumi-Lab/SmartPi-armbian --json tagName --jq .tagName)
-          fi
-          echo "Base release: ${TAG}"
+          TAG="${{ needs.check.outputs.base_tag }}"
+          FILTER="${{ github.event.inputs.artifact_filter }}"
+          FILTER="${FILTER:-smartpi1-trixie-debian13-server}"
+          echo "Base release: ${TAG} — filter: ${FILTER}"
           gh release download "${TAG}" --repo Yumi-Lab/SmartPi-armbian \
-            --pattern "*${{ github.event.inputs.artifact_filter }}*.img.xz"
+            --pattern "*${FILTER}*.img.xz"
           ls -la
 
       - name: Extract image
@@ -181,3 +201,19 @@ jobs:
         with:
           name: ${{ env.OUT }}.img.xz.sha256
           path: work/${{ env.OUT }}.img.xz.sha256
+
+      - name: Publish as release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ needs.check.outputs.base_tag }}"
+          if gh release view "${TAG}" --repo "${{ github.repository }}" > /dev/null 2>&1; then
+            echo "Release ${TAG} exists — uploading assets"
+          else
+            gh release create "${TAG}" \
+              --title "DietPi ${TAG}" \
+              --notes "DietPi image converted from SmartPi-armbian ${TAG} (base: ${{ github.event.inputs.artifact_filter || 'smartpi1-trixie-debian13-server' }})." \
+              --repo "${{ github.repository }}"
+          fi
+          gh release upload "${TAG}" work/${{ env.OUT }}.img.xz work/${{ env.OUT }}.img.xz.sha256 \
+            --clobber --repo "${{ github.repository }}"

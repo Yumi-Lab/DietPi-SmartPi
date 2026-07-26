@@ -22,7 +22,12 @@ export GITOWNER="${GITOWNER:-MichaIng}"
 export GITBRANCH="${GITBRANCH:-master}"
 export HW_MODEL="${HW_MODEL:-25}"           # 25 = Generic Allwinner H3
 export DISTRO_TARGET="${DISTRO_TARGET:-8}"  # 8 = Debian trixie
-export WIFI_REQUIRED="${WIFI_REQUIRED:-0}"  # SmartPi One has no onboard WiFi
+# The board has no onboard WiFi, but USB adapters are common: ship the WiFi
+# stack (iw, wpasupplicant, wireless-regdb) so a dongle works offline. With
+# WIFI_REQUIRED=0 the installer purges those packages, and dietpi-config then
+# needs an internet connection to enable WiFi — impossible on a board that has
+# only WiFi to get online.
+export WIFI_REQUIRED="${WIFI_REQUIRED:-1}"
 export IMAGE_CREATOR="${IMAGE_CREATOR:-Yumi Lab}"
 export PREIMAGE_INFO="${PREIMAGE_INFO:-Yumi SmartPi-armbian (Armbian trixie server)}"
 DEFAULT_PASSWORD="${DEFAULT_PASSWORD:-yumi}"
@@ -93,6 +98,34 @@ preseed AUTO_SETUP_GLOBAL_PASSWORD "${DEFAULT_PASSWORD}"
 preseed SURVEY_OPTED_IN 0
 echo "First-run preseed applied:"
 grep -E "^(AUTO_SETUP_AUTOMATED|SURVEY_OPTED_IN)=" /boot/dietpi.txt
+
+# Yumi login banner. /etc/bashrc.d/ is DietPi's hook for user-wide interactive
+# shells; files are sourced in alphabetical order, so a zz- prefix runs after
+# dietpi.bash — that is, after DietPi has drawn (and cleared the screen for)
+# its own banner. Redraw with the Yumi logo on top, keeping DietPi's
+# information block underneath.
+cat > /etc/bashrc.d/zz-yumi-banner.sh << 'BANNER_SCRIPT'
+if [ -n "${PS1}" ] && [ -t 1 ] && [ -z "${YUMI_BANNER_SHOWN}" ]; then
+	export YUMI_BANNER_SHOWN=1
+	clear
+	printf '\033[1;33m'
+	cat << 'YUMI_BANNER_ART'
+ ██╗   ██╗██╗   ██╗███╗   ███╗██╗
+ ╚██╗ ██╔╝██║   ██║████╗ ████║██║
+  ╚████╔╝ ██║   ██║██╔████╔██║██║
+   ╚██╔╝  ██║   ██║██║╚██╔╝██║██║
+    ██║   ╚██████╔╝██║ ╚═╝ ██║██║
+    ╚═╝    ╚═════╝ ╚═╝     ╚═╝╚═╝
+YUMI_BANNER_ART
+	printf '\033[0m'
+	if [ -r /proc/device-tree/model ]; then
+		printf ' \033[2m%s\033[0m\n' "$(tr -d '\0' < /proc/device-tree/model)"
+	fi
+	[ -x /boot/dietpi/func/dietpi-banner ] && /boot/dietpi/func/dietpi-banner 0
+fi
+BANNER_SCRIPT
+chmod 644 /etc/bashrc.d/zz-yumi-banner.sh
+echo "Yumi login banner installed"
 
 # Familiar 'pi' account next to root, following the Raspberry Pi convention:
 # sudo rights plus the hardware groups needed for GPIO/I2C/SPI/serial work.

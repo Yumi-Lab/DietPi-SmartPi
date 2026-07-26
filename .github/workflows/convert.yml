@@ -1,0 +1,146 @@
+name: Convert to DietPi
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "SmartPi-armbian release tag to use as base (empty = latest release)"
+        required: false
+        default: ""
+      artifact_filter:
+        description: "Base image filter"
+        required: false
+        default: "smartpi1-trixie-debian13-server"
+      dietpi_owner:
+        description: "DietPi repo owner"
+        required: false
+        default: "MichaIng"
+      dietpi_branch:
+        description: "DietPi repo branch"
+        required: false
+        default: "master"
+      hw_model:
+        description: "DietPi hardware model ID (25 = Generic Allwinner H3)"
+        required: false
+        default: "25"
+
+jobs:
+  convert:
+    name: Convert ${{ github.event.inputs.artifact_filter }} to DietPi
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install host dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-user-static binfmt-support xz-utils parted
+
+      - name: Download base image from latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p work && cd work
+          TAG="${{ github.event.inputs.release_tag }}"
+          if [[ -z "${TAG}" ]]; then
+            TAG=$(gh release view --repo Yumi-Lab/SmartPi-armbian --json tagName --jq .tagName)
+          fi
+          echo "Base release: ${TAG}"
+          gh release download "${TAG}" --repo Yumi-Lab/SmartPi-armbian \
+            --pattern "*${{ github.event.inputs.artifact_filter }}*.img.xz"
+          ls -la
+
+      - name: Extract image
+        run: |
+          cd work
+          IMG_XZ=$(ls *.img.xz | head -n1)
+          echo "Base image: ${IMG_XZ}"
+          unxz -T0 "${IMG_XZ}"
+          IMG=$(ls *.img | head -n1)
+          echo "IMG=${IMG}" >> "$GITHUB_ENV"
+          ls -la
+
+      - name: Grow image (+2G for the conversion)
+        run: |
+          cd work
+          truncate -s +2G "${IMG}"
+          # Root partition = last partition of the MBR table
+          ROOTPART=$(sudo parted -sm "${IMG}" unit s print | tail -n1 | cut -d: -f1)
+          echo "Root partition number: ${ROOTPART}"
+          sudo parted -s "${IMG}" resizepart "${ROOTPART}" 100%
+          echo "ROOTPART=${ROOTPART}" >> "$GITHUB_ENV"
+
+      - name: Mount image
+        run: |
+          cd work
+          LOOP=$(sudo losetup -fP --show "${IMG}")
+          echo "Loop device: ${LOOP}"
+          echo "LOOP=${LOOP}" >> "$GITHUB_ENV"
+          lsblk "${LOOP}"
+          sudo e2fsck -fy "${LOOP}p${ROOTPART}" || true
+          sudo resize2fs "${LOOP}p${ROOTPART}"
+          sudo mkdir -p /mnt/img
+          sudo mount "${LOOP}p${ROOTPART}" /mnt/img
+          # FAT boot partition, if the image has one
+          if [[ "${ROOTPART}" != "1" ]]; then
+            sudo mount "${LOOP}p1" /mnt/img/boot
+          fi
+          df -h /mnt/img /mnt/img/boot || true
+
+      - name: Prepare chroot
+        run: |
+          sudo cp /usr/bin/qemu-arm-static /mnt/img/usr/bin/
+          sudo mount --bind /dev /mnt/img/dev
+          sudo mount --bind /dev/pts /mnt/img/dev/pts
+          sudo mount -t proc proc /mnt/img/proc
+          sudo mount -t sysfs sys /mnt/img/sys
+          sudo mount -t tmpfs tmpfs /mnt/img/tmp
+          sudo cp /mnt/img/etc/resolv.conf /mnt/img/etc/resolv.conf.bak 2>/dev/null || true
+          echo "nameserver 1.1.1.1" | sudo tee /mnt/img/etc/resolv.conf > /dev/null
+          sudo cp install.sh /mnt/img/install.sh
+          sudo chmod +x /mnt/img/install.sh
+
+      - name: Run DietPi installer in chroot
+        run: |
+          sudo chroot /mnt/img /usr/bin/env \
+            GITOWNER="${{ github.event.inputs.dietpi_owner }}" \
+            GITBRANCH="${{ github.event.inputs.dietpi_branch }}" \
+            HW_MODEL="${{ github.event.inputs.hw_model }}" \
+            DISTRO_TARGET=8 \
+            WIFI_REQUIRED=0 \
+            bash /install.sh
+
+      - name: Cleanup chroot
+        if: always()
+        run: |
+          sudo rm -f /mnt/img/install.sh /mnt/img/usr/bin/qemu-arm-static
+          sudo umount -l /mnt/img/tmp /mnt/img/sys /mnt/img/proc /mnt/img/dev/pts /mnt/img/dev 2>/dev/null || true
+          if mountpoint -q /mnt/img/boot; then sudo umount /mnt/img/boot; fi
+          sudo umount /mnt/img
+          sudo e2fsck -fy "${LOOP}p${ROOTPART}" || true
+          sudo losetup -d "${LOOP}"
+
+      - name: Rename and compress
+        run: |
+          cd work
+          DATE=$(date -u +%Y-%m-%d-%H%M)
+          OUT="Yumi-DietPi-SmartPi-trixie-${DATE}"
+          mv "${IMG}" "${OUT}.img"
+          xz -efvzT0 "${OUT}.img"
+          sha256sum "${OUT}.img.xz" > "${OUT}.img.xz.sha256"
+          echo "OUT=${OUT}" >> "$GITHUB_ENV"
+          ls -la
+
+      - name: Upload DietPi image
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.OUT }}.img.xz
+          path: work/${{ env.OUT }}.img.xz
+
+      - name: Upload checksum
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.OUT }}.img.xz.sha256
+          path: work/${{ env.OUT }}.img.xz.sha256

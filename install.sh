@@ -69,6 +69,14 @@ if [[ ${SYSTEMCTL_DIVERTED:-0} == 1 ]]; then
     dpkg-divert --local --rename --remove /usr/bin/systemctl > /dev/null
 fi
 
+# The installer clears apt holds — re-apply them so a future dietpi-update
+# can never swap our custom kernel/DTB/U-Boot for the generic
+# apt.armbian.com builds (which lack the SmartPi One device tree).
+dpkg-query -Wf '${db:Status-Status} ${Package}\n' 'linux-image-*' 'linux-dtb-*' 'linux-u-boot-*' 'linux-headers-*' 2>/dev/null \
+    | awk '$1 == "installed" { print $2 }' | xargs -r apt-mark hold || true
+echo "Held packages after install:"
+apt-mark showhold
+
 # Sanity checks. Only a missing dietpi.txt is fatal — everything else is
 # informational so a debug run still produces an inspectable image.
 echo "=== Post-conversion sanity checks ==="

@@ -79,11 +79,9 @@ preseed() {
 }
 preseed AUTO_SETUP_AUTOMATED 1
 preseed AUTO_SETUP_GLOBAL_PASSWORD yumi
-preseed AUTO_SETUP_KEYBOARD_LAYOUT fr
-preseed AUTO_SETUP_TIMEZONE Europe/Paris
 preseed SURVEY_OPTED_IN 0
 echo "First-run preseed applied:"
-grep -E "^(AUTO_SETUP_(AUTOMATED|KEYBOARD_LAYOUT|TIMEZONE)|SURVEY_OPTED_IN)=" /boot/dietpi.txt
+grep -E "^(AUTO_SETUP_AUTOMATED|SURVEY_OPTED_IN)=" /boot/dietpi.txt
 
 # The base image loads the g_ether (RNDIS) gadget for the OTG port, which
 # macOS cannot use — switch to g_ncm (CDC NCM), natively supported by both

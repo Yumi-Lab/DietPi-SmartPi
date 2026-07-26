@@ -57,9 +57,19 @@ SHIM
     SYSTEMCTL_DIVERTED=1
 fi
 
+# The installer deletes /boot/boot.bmp to strip Armbian branding, which also
+# removes our boot logo — keep a copy and put it back afterwards.
+[[ -f /boot/boot.bmp ]] && cp /boot/boot.bmp /tmp/boot.bmp.keep
+
 # Fetch and run the official DietPi installer
 curl -sSfL "https://raw.githubusercontent.com/${GITOWNER}/DietPi/${GITBRANCH}/.build/images/dietpi-installer" -o /tmp/dietpi-installer
 bash /tmp/dietpi-installer
+
+if [[ -f /tmp/boot.bmp.keep ]]; then
+    cp /tmp/boot.bmp.keep /boot/boot.bmp
+    rm -f /tmp/boot.bmp.keep
+    echo "Boot logo restored after the installer removed it"
+fi
 
 echo "=== DietPi installer finished ==="
 
@@ -101,7 +111,7 @@ apt-mark showhold
 # Sanity checks. Only a missing dietpi.txt is fatal — everything else is
 # informational so a debug run still produces an inspectable image.
 echo "=== Post-conversion sanity checks ==="
-for f in /boot/boot.scr /boot/armbianEnv.txt; do
+for f in /boot/boot.scr /boot/armbianEnv.txt /boot/boot.bmp; do
     if [[ -f "${f}" ]]; then
         echo "OK: ${f} present"
     else

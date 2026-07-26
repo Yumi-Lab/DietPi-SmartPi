@@ -143,6 +143,13 @@ jobs:
           SIZE_S=$(( TARGET * BSIZE / 512 ))
           sudo losetup -d "${LOOP}"
           echo "${START_S},${SIZE_S}" | sudo sfdisk --force -N "${ROOTPART}" "${IMG}"
+          # Armbian tags the FAT /boot partition as MBR type 0xEA, which
+          # macOS/Windows refuse to probe — retag it as FAT32 LBA (0x0C) so
+          # dietpi.txt can be edited from any computer, like official
+          # DietPi images.
+          if [[ "${ROOTPART}" != "1" ]]; then
+            sudo sfdisk --force --part-type "${IMG}" 1 c
+          fi
           truncate -s $(( (START_S + SIZE_S) * 512 )) "${IMG}"
           ls -la --block-size=M "${IMG}"
 

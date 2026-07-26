@@ -97,8 +97,10 @@ jobs:
           sudo mount -t proc proc /mnt/img/proc
           sudo mount -t sysfs sys /mnt/img/sys
           sudo mount -t tmpfs tmpfs /mnt/img/tmp
-          sudo cp /mnt/img/etc/resolv.conf /mnt/img/etc/resolv.conf.bak 2>/dev/null || true
-          echo "nameserver 1.1.1.1" | sudo tee /mnt/img/etc/resolv.conf > /dev/null
+          # Armbian's resolv.conf is a symlink into /run (systemd-resolved),
+          # dangling inside the chroot — replace it with a real file
+          sudo rm -f /mnt/img/etc/resolv.conf
+          printf 'nameserver 1.1.1.1\nnameserver 9.9.9.9\n' | sudo tee /mnt/img/etc/resolv.conf > /dev/null
           sudo cp install.sh /mnt/img/install.sh
           sudo chmod +x /mnt/img/install.sh
 

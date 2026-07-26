@@ -31,8 +31,8 @@ echo "=== DietPi conversion: HW_MODEL=${HW_MODEL} DISTRO_TARGET=${DISTRO_TARGET}
 # Belt and braces: never let apt swap our custom kernel/DTB/U-Boot for the
 # generic apt.armbian.com builds — the SmartPi One would not boot with them
 # (custom DRAM timings + sun8i-h3-smartpi-one.dtb).
-dpkg-query -Wf '${Package}\n' 'linux-image-*' 'linux-dtb-*' 'linux-u-boot-*' 'linux-headers-*' 2>/dev/null \
-    | xargs -r apt-mark hold || true
+dpkg-query -Wf '${db:Status-Status} ${Package}\n' 'linux-image-*' 'linux-dtb-*' 'linux-u-boot-*' 'linux-headers-*' 2>/dev/null \
+    | awk '$1 == "installed" { print $2 }' | xargs -r apt-mark hold || true
 echo "Held packages:"
 apt-mark showhold
 

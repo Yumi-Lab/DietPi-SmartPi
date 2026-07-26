@@ -99,55 +99,6 @@ preseed SURVEY_OPTED_IN 0
 echo "First-run preseed applied:"
 grep -E "^(AUTO_SETUP_AUTOMATED|SURVEY_OPTED_IN)=" /boot/dietpi.txt
 
-# Yumi login banner. /etc/bashrc.d/ is DietPi's hook for user-wide interactive
-# shells; a zz- prefix makes it the last one sourced.
-cat > /etc/bashrc.d/zz-yumi-banner.sh << 'BANNER_SCRIPT'
-# Yumi login banner: the Yumi logo above DietPi's own information block.
-# dietpi-login clears the screen and draws that block after every
-# /etc/bashrc.d/ script has been sourced, so printing here directly would be
-# wiped — defer to the first prompt instead. Capturing dietpi-banner rather
-# than letting it write to the terminal keeps its full output (device model,
-# CPU temperature, IP, MOTD, credits and command list) without its screen
-# clear, so it can be printed underneath the logo.
-_yumi_banner() {
-	PROMPT_COMMAND=${_YUMI_PROMPT_COMMAND_ORIG}
-	unset -v _YUMI_PROMPT_COMMAND_ORIG
-
-	local dietpi_block=''
-	[ -x /boot/dietpi/func/dietpi-banner ] && dietpi_block=$(/boot/dietpi/func/dietpi-banner 1 2>/dev/null)
-
-	clear
-	printf '\033[1;33m'
-	cat << 'YUMI_BANNER_ART'
- ██╗   ██╗██╗   ██╗███╗   ███╗██╗
- ╚██╗ ██╔╝██║   ██║████╗ ████║██║
-  ╚████╔╝ ██║   ██║██╔████╔██║██║
-   ╚██╔╝  ██║   ██║██║╚██╔╝██║██║
-    ██║   ╚██████╔╝██║ ╚═╝ ██║██║
-    ╚═╝    ╚═════╝ ╚═╝     ╚═╝╚═╝
-YUMI_BANNER_ART
-	printf '\033[0m'
-
-	if [ -n "${dietpi_block}" ]; then
-		printf '%s\n' "${dietpi_block}"
-	fi
-
-	if [ "$(id -u)" != "0" ]; then
-		printf ' \033[1;36msudo dietpi-config\033[0m : run the tools above as administrator\n\n'
-	fi
-
-	unset -f _yumi_banner
-}
-
-if [ -n "${PS1}" ] && [ -t 1 ] && [ -z "${YUMI_BANNER_SHOWN}" ]; then
-	export YUMI_BANNER_SHOWN=1
-	_YUMI_PROMPT_COMMAND_ORIG=${PROMPT_COMMAND}
-	PROMPT_COMMAND=_yumi_banner
-fi
-BANNER_SCRIPT
-chmod 644 /etc/bashrc.d/zz-yumi-banner.sh
-echo "Yumi login banner installed"
-
 # Familiar 'pi' account next to root, following the Raspberry Pi convention:
 # sudo rights plus the hardware groups needed for GPIO/I2C/SPI/serial work.
 if id -u pi > /dev/null 2>&1; then

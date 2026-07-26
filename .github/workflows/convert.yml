@@ -38,7 +38,10 @@ jobs:
         run: |
           TAG="${{ github.event.inputs.release_tag }}"
           if [[ -z "${TAG}" ]]; then
-            TAG=$(gh release view --repo Yumi-Lab/SmartPi-armbian --json tagName --jq .tagName)
+            # Most recent release, prereleases included — `gh release view`
+            # would return the latest *stable* one and silently convert an
+            # outdated base whenever the newest release is a prerelease.
+            TAG=$(gh api repos/Yumi-Lab/SmartPi-armbian/releases --jq '[.[] | select(.draft | not)][0].tag_name')
           fi
           echo "base_tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "Base release: ${TAG}"

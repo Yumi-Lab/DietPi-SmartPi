@@ -85,6 +85,13 @@ preseed SURVEY_OPTED_IN 0
 echo "First-run preseed applied:"
 grep -E "^(AUTO_SETUP_(AUTOMATED|KEYBOARD_LAYOUT|TIMEZONE)|SURVEY_OPTED_IN)=" /boot/dietpi.txt
 
+# The base image loads the g_ether (RNDIS) gadget for the OTG port, which
+# macOS cannot use — switch to g_ncm (CDC NCM), natively supported by both
+# macOS (AppleUSBNCM) and Windows 11. Verified on hardware.
+sed -i 's/^g_ether/g_ncm/' /etc/modules 2>/dev/null || true
+sed -i 's/^g_ether/g_ncm/' /etc/modules-load.d/*.conf 2>/dev/null || true
+grep -rn "^g_ncm" /etc/modules /etc/modules-load.d/ 2>/dev/null || echo "NOTE: no gadget module configured (base image may predate OTG support)"
+
 # The installer clears apt holds — re-apply them so a future dietpi-update
 # can never swap our custom kernel/DTB/U-Boot for the generic
 # apt.armbian.com builds (which lack the SmartPi One device tree).

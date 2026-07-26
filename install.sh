@@ -36,11 +36,38 @@ dpkg-query -Wf '${db:Status-Status} ${Package}\n' 'linux-image-*' 'linux-dtb-*' 
 echo "Held packages:"
 apt-mark showhold
 
+# systemd is not running inside the chroot, and trixie's systemctl hard-fails
+# on '--now' in that situation (older versions silently ignored it). Divert
+# systemctl behind a shim that drops '--now' and turns runtime-only verbs
+# into no-ops, while persistent enable/disable/mask still manage symlinks.
+if [[ ! -d /run/systemd/system ]]; then
+    dpkg-divert --local --rename --add /usr/bin/systemctl > /dev/null
+    cat > /usr/bin/systemctl << 'SHIM'
+#!/bin/bash
+args=()
+for a in "$@"; do [[ ${a} == '--now' ]] || args+=("${a}"); done
+verb=''
+for a in "${args[@]}"; do case ${a} in -*) ;; *) verb=${a}; break ;; esac; done
+case ${verb} in
+    start|stop|restart|try-restart|reload|reload-or-restart|kill|is-active|isolate) exit 0 ;;
+esac
+exec /usr/bin/systemctl.distrib "${args[@]}"
+SHIM
+    chmod 755 /usr/bin/systemctl
+    SYSTEMCTL_DIVERTED=1
+fi
+
 # Fetch and run the official DietPi installer
 curl -sSfL "https://raw.githubusercontent.com/${GITOWNER}/DietPi/${GITBRANCH}/.build/images/dietpi-installer" -o /tmp/dietpi-installer
 bash /tmp/dietpi-installer
 
 echo "=== DietPi installer finished ==="
+
+# Restore the real systemctl
+if [[ ${SYSTEMCTL_DIVERTED:-0} == 1 ]]; then
+    rm -f /usr/bin/systemctl
+    dpkg-divert --local --rename --remove /usr/bin/systemctl > /dev/null
+fi
 
 # Sanity checks. Only a missing dietpi.txt is fatal — everything else is
 # informational so a debug run still produces an inspectable image.

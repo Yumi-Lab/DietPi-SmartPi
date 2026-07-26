@@ -69,6 +69,22 @@ if [[ ${SYSTEMCTL_DIVERTED:-0} == 1 ]]; then
     dpkg-divert --local --rename --remove /usr/bin/systemctl > /dev/null
 fi
 
+# Preseed the first run so a flashed image configures itself with ZERO
+# interaction on the device: one unattended boot cycle and it is ready.
+# Default login: root / yumi (change with passwd or dietpi-config).
+preseed() {
+    local key="$1" value="$2"
+    sed -i "s|^#\?${key}=.*|${key}=${value}|" /boot/dietpi.txt
+    grep -q "^${key}=" /boot/dietpi.txt || echo "${key}=${value}" >> /boot/dietpi.txt
+}
+preseed AUTO_SETUP_AUTOMATED 1
+preseed AUTO_SETUP_GLOBAL_PASSWORD yumi
+preseed AUTO_SETUP_KEYBOARD_LAYOUT fr
+preseed AUTO_SETUP_TIMEZONE Europe/Paris
+preseed SURVEY_OPTED_IN 0
+echo "First-run preseed applied:"
+grep -E "^(AUTO_SETUP_(AUTOMATED|KEYBOARD_LAYOUT|TIMEZONE)|SURVEY_OPTED_IN)=" /boot/dietpi.txt
+
 # The installer clears apt holds — re-apply them so a future dietpi-update
 # can never swap our custom kernel/DTB/U-Boot for the generic
 # apt.armbian.com builds (which lack the SmartPi One device tree).

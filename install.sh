@@ -89,6 +89,18 @@ if [[ -x /usr/local/bin/smartpad-detect.sh ]]; then
 else
     echo "NOTE: smartpad rotation scripts absent (base image may predate them)"
 fi
+# The SmartPad auto-rotation (800x480 + touchscreen detection) must stay
+# active on the converted image: re-enable its service in case the
+# installer's service cleanup disabled it, and fail if that is impossible.
+if [[ -f /etc/systemd/system/smartpad-console-rotate.service ]]; then
+    systemctl enable smartpad-console-rotate.service
+    if [[ -L /etc/systemd/system/multi-user.target.wants/smartpad-console-rotate.service ]]; then
+        echo "OK: smartpad-console-rotate.service enabled"
+    else
+        echo "ERROR: smartpad-console-rotate.service could not be re-enabled"
+        exit 1
+    fi
+fi
 if [[ -f /boot/dietpi.txt ]]; then
     echo "OK: /boot/dietpi.txt present"
 else

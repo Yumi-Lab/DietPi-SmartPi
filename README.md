@@ -18,7 +18,10 @@ tooling, on top of the SmartPi One custom stack.
 3. [`install.sh`](install.sh) runs the **official DietPi installer**
    non-interactively with `HW_MODEL=25` (Generic Allwinner H3) and
    `DISTRO_TARGET=8` (trixie).
-4. The result is repacked as `Yumi-DietPi-SmartPi-trixie-*.img.xz`.
+4. The image is shrunk back to its minimal size (+200 MB margin — DietPi
+   re-expands to the full SD card on first boot) and repacked following the
+   OS builder naming convention:
+   `Yumi-smartpi1-trixie-debian13-dietpi-{timestamp}.img.xz`.
 
 ## What survives the conversion
 

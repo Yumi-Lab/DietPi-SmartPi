@@ -36,7 +36,7 @@ jobs:
       - name: Install host dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y qemu-user-static binfmt-support xz-utils parted
+          sudo apt-get install -y qemu-user-static binfmt-support xz-utils parted zerofree
 
       - name: Download base image from latest release
         env:
@@ -120,15 +120,43 @@ jobs:
           sudo rm -f /mnt/img/install.sh /mnt/img/usr/bin/qemu-arm-static
           sudo umount -l /mnt/img/tmp /mnt/img/sys /mnt/img/proc /mnt/img/dev/pts /mnt/img/dev 2>/dev/null || true
           if mountpoint -q /mnt/img/boot; then sudo umount /mnt/img/boot; fi
-          sudo umount /mnt/img
-          sudo e2fsck -fy "${LOOP}p${ROOTPART}" || true
+          sudo umount /mnt/img || true
+
+      - name: Shrink image
+        run: |
+          cd work
+          PART="${LOOP}p${ROOTPART}"
+          sudo e2fsck -fy "${PART}"
+          # Shrink the filesystem to its minimum, then add a ~200 MB margin;
+          # DietPi re-expands to the full SD card on first boot.
+          sudo resize2fs -M "${PART}"
+          BSIZE=$(sudo dumpe2fs -h "${PART}" 2>/dev/null | awk '/^Block size:/{print $3}')
+          BCOUNT=$(sudo dumpe2fs -h "${PART}" 2>/dev/null | awk '/^Block count:/{print $3}')
+          MARGIN=$(( 200 * 1024 * 1024 / BSIZE ))
+          TARGET=$(( BCOUNT + MARGIN ))
+          sudo resize2fs "${PART}" "${TARGET}"
+          # Zero the remaining free blocks so xz can compress them away
+          sudo zerofree "${PART}" || true
+          sudo e2fsck -fy "${PART}"
+          # Rewrite the partition entry to the new size and cut the file
+          START_S=$(sudo parted -sm "${IMG}" unit s print | awk -F: -v p="${ROOTPART}" '$1==p {gsub("s","",$2); print $2}')
+          SIZE_S=$(( TARGET * BSIZE / 512 ))
           sudo losetup -d "${LOOP}"
+          echo "${START_S},${SIZE_S}" | sudo sfdisk --force -N "${ROOTPART}" "${IMG}"
+          truncate -s $(( (START_S + SIZE_S) * 512 )) "${IMG}"
+          ls -la --block-size=M "${IMG}"
 
       - name: Rename and compress
         run: |
           cd work
           DATE=$(date -u +%Y-%m-%d-%H%M)
-          OUT="Yumi-DietPi-SmartPi-trixie-${DATE}"
+          # Follow the OS builder naming convention:
+          # {Vendor}-{board}-{codename}-{distro}-{variant}-{timestamp}
+          BASE=$(basename "${IMG}" .img)
+          OUT=$(echo "${BASE}" | sed -E "s/-server-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{4}$/-dietpi-${DATE}/")
+          if [[ "${OUT}" == "${BASE}" ]]; then
+            OUT="Yumi-smartpi1-trixie-debian13-dietpi-${DATE}"
+          fi
           mv "${IMG}" "${OUT}.img"
           xz -efvzT0 "${OUT}.img"
           sha256sum "${OUT}.img.xz" > "${OUT}.img.xz.sha256"

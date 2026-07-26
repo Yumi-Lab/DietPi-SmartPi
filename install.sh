@@ -25,6 +25,7 @@ export DISTRO_TARGET="${DISTRO_TARGET:-8}"  # 8 = Debian trixie
 export WIFI_REQUIRED="${WIFI_REQUIRED:-0}"  # SmartPi One has no onboard WiFi
 export IMAGE_CREATOR="${IMAGE_CREATOR:-Yumi Lab}"
 export PREIMAGE_INFO="${PREIMAGE_INFO:-Yumi SmartPi-armbian (Armbian trixie server)}"
+DEFAULT_PASSWORD="${DEFAULT_PASSWORD:-yumi}"
 
 echo "=== DietPi conversion: HW_MODEL=${HW_MODEL} DISTRO_TARGET=${DISTRO_TARGET} (${GITOWNER}/${GITBRANCH}) ==="
 
@@ -88,10 +89,23 @@ preseed() {
     grep -q "^${key}=" /boot/dietpi.txt || echo "${key}=${value}" >> /boot/dietpi.txt
 }
 preseed AUTO_SETUP_AUTOMATED 1
-preseed AUTO_SETUP_GLOBAL_PASSWORD yumi
+preseed AUTO_SETUP_GLOBAL_PASSWORD "${DEFAULT_PASSWORD}"
 preseed SURVEY_OPTED_IN 0
 echo "First-run preseed applied:"
 grep -E "^(AUTO_SETUP_AUTOMATED|SURVEY_OPTED_IN)=" /boot/dietpi.txt
+
+# Familiar 'pi' account next to root, following the Raspberry Pi convention:
+# sudo rights plus the hardware groups needed for GPIO/I2C/SPI/serial work.
+if id -u pi > /dev/null 2>&1; then
+    echo "User 'pi' already exists"
+else
+    useradd -m -s /bin/bash -c "SmartPi user" pi
+    echo "pi:${DEFAULT_PASSWORD}" | chpasswd
+    for g in sudo users adm dialout audio video plugdev netdev input i2c spi gpio dietpi; do
+        getent group "${g}" > /dev/null 2>&1 && usermod -aG "${g}" pi
+    done
+    echo "User 'pi' created — groups: $(id -nG pi)"
+fi
 
 # The base image loads the g_ether (RNDIS) gadget for the OTG port, which
 # macOS cannot use — switch to g_ncm (CDC NCM), natively supported by both

@@ -134,7 +134,6 @@ jobs:
             GITBRANCH="${{ github.event.inputs.dietpi_branch }}" \
             HW_MODEL="${{ github.event.inputs.hw_model }}" \
             DISTRO_TARGET=8 \
-            WIFI_REQUIRED=0 \
             bash /install.sh
 
       - name: Cleanup chroot

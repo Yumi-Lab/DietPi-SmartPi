@@ -23,6 +23,10 @@ on:
         description: "DietPi hardware model ID (25 = Generic Allwinner H3)"
         required: false
         default: "25"
+      distro_target:
+        description: "DietPi Debian target (7 = bookworm, 8 = trixie, 9 = forky/Debian 14 testing)"
+        required: false
+        default: "8"
 
 jobs:
   check:
@@ -133,7 +137,7 @@ jobs:
             GITOWNER="${{ github.event.inputs.dietpi_owner }}" \
             GITBRANCH="${{ github.event.inputs.dietpi_branch }}" \
             HW_MODEL="${{ github.event.inputs.hw_model }}" \
-            DISTRO_TARGET=8 \
+            DISTRO_TARGET="${{ github.event.inputs.distro_target || '8' }}" \
             bash /install.sh
 
       - name: Cleanup chroot
@@ -186,6 +190,12 @@ jobs:
           if [[ "${OUT}" == "${BASE}" ]]; then
             OUT="Yumi-smartpi1-trixie-debian13-dietpi-${DATE}"
           fi
+          # The base name carries the base image's distro; when the installer
+          # dist-upgraded to another Debian, the artifact must say so.
+          case "${{ github.event.inputs.distro_target || '8' }}" in
+            7) OUT="${OUT/trixie-debian13/bookworm-debian12}" ;;
+            9) OUT="${OUT/trixie-debian13/forky-debian14}" ;;
+          esac
           mv "${IMG}" "${OUT}.img"
           xz -efvzT0 "${OUT}.img"
           sha256sum "${OUT}.img.xz" > "${OUT}.img.xz.sha256"

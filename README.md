@@ -43,6 +43,7 @@ Run the **Convert to DietPi** workflow (Actions tab → Run workflow). Inputs:
 | `artifact_filter` | `smartpi1-trixie-debian13-server` | Base image variant |
 | `dietpi_owner` / `dietpi_branch` | `MichaIng` / `master` | DietPi source |
 | `hw_model` | `25` | DietPi hardware model ID |
+| `distro_target` | `8` (trixie) | Debian target: `7` bookworm, `8` trixie, `9` forky/Debian 14 (**testing**, moving target) |
 
 The converted image is published as a workflow artifact and attached to a
 GitHub release named after the base SmartPi-armbian tag.

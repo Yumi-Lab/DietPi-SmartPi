@@ -44,10 +44,22 @@ Run the **Convert to DietPi** workflow (Actions tab → Run workflow). Inputs:
 | `dietpi_owner` / `dietpi_branch` | `MichaIng` / `master` | DietPi source |
 | `hw_model` | `25` | DietPi hardware model ID |
 
-The converted image is published as a workflow artifact.
+The converted image is published as a workflow artifact and attached to a
+GitHub release named after the base SmartPi-armbian tag.
 
 ## First boot
 
-Standard DietPi first-boot flow: login `root` / `dietpi`, the setup wizard
-runs `dietpi-update` then `dietpi-software`. Network (Ethernet/DHCP) is
-required on first boot.
+Fully unattended (`AUTO_SETUP_AUTOMATED=1`): one boot cycle and the system
+is ready. Network is needed once for `dietpi-update` to complete the setup.
+
+- **Logins**: `root` / `yumi` and `pi` / `yumi` (sudo + hardware groups:
+  gpio, i2c, spi, dialout…).
+- **Ethernet**: DHCP, works out of the box.
+- **WiFi**: enabled by default, the full stack (`iw`, `wpasupplicant`,
+  `wireless-regdb`) ships in the image so a USB dongle works **offline**.
+  Put your network in `dietpi-wifi.txt` on the FAT partition (readable from
+  any OS) before first boot, or run `dietpi-config` later. The DietPi
+  firstboot script is patched during conversion so enabling WiFi does *not*
+  disable Ethernet — both interfaces stay active.
+- **USB OTG**: the port exposes a CDC-NCM network gadget (native on macOS
+  and Windows 11), SSH via `172.22.1.1`.

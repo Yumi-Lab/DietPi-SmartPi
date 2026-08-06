@@ -96,8 +96,35 @@ preseed() {
 preseed AUTO_SETUP_AUTOMATED 1
 preseed AUTO_SETUP_GLOBAL_PASSWORD "${DEFAULT_PASSWORD}"
 preseed SURVEY_OPTED_IN 0
+# WiFi on by default: firstboot then loads the modules, drops the cfg80211
+# blacklist and applies /boot/dietpi-wifi.txt — all offline, since the
+# packages ship in the image (WIFI_REQUIRED=1). Users put their SSID/key in
+# dietpi-wifi.txt on the FAT partition before first boot, or use
+# dietpi-config later.
+preseed AUTO_SETUP_NET_WIFI_ENABLED 1
+preseed AUTO_SETUP_NET_WIFI_COUNTRY_CODE FR
 echo "First-run preseed applied:"
-grep -E "^(AUTO_SETUP_AUTOMATED|SURVEY_OPTED_IN)=" /boot/dietpi.txt
+grep -E "^(AUTO_SETUP_AUTOMATED|SURVEY_OPTED_IN|AUTO_SETUP_NET_WIFI_ENABLED|AUTO_SETUP_NET_WIFI_COUNTRY_CODE)=" /boot/dietpi.txt
+
+# DietPi's firstboot enables either WiFi OR Ethernet and comments out the
+# other in /etc/network/interfaces. With WiFi on by default, an
+# Ethernet-only user would boot a card whose eth0 is disabled — offline,
+# and the automated first-run setup needs network to finish. Patch the
+# one-shot firstboot script so neither branch disables the other
+# interface: both stay allow-hotplug and ifupdown brings up whichever is
+# connected. The script runs once, at first boot, before any dietpi-update
+# could restore the upstream version.
+FIRSTBOOT=/var/lib/dietpi/services/dietpi-firstboot.bash
+if ! grep -q 'c\\#allow-hotplug' "${FIRSTBOOT}"; then
+    echo "ERROR: interface-disable pattern not found in ${FIRSTBOOT} — DietPi changed the firstboot script, review the WiFi+Ethernet patch"
+    exit 1
+fi
+sed -i 's|c\\#allow-hotplug|c\\allow-hotplug|g' "${FIRSTBOOT}"
+if grep -q 'c\\#allow-hotplug' "${FIRSTBOOT}"; then
+    echo "ERROR: firstboot WiFi+Ethernet patch did not apply"
+    exit 1
+fi
+echo "Firstboot patched: WiFi and Ethernet both stay enabled"
 
 # Familiar 'pi' account next to root, following the Raspberry Pi convention:
 # sudo rights plus the hardware groups needed for GPIO/I2C/SPI/serial work.
@@ -158,4 +185,23 @@ else
     echo "ERROR: /boot/dietpi.txt missing — DietPi install did not complete"
     exit 1
 fi
+# WiFi stack: must be installed AND marked manual (an auto mark means the
+# first dietpi-update autoremove on the device purges it), with the
+# credentials file on the FAT partition. This is what makes a USB dongle
+# usable offline — a regression here once shipped silently, so it is fatal.
+for p in wpasupplicant iw wireless-regdb; do
+    if ! dpkg-query -s "${p}" > /dev/null 2>&1; then
+        echo "ERROR: ${p} not installed — WiFi stack missing (check WIFI_REQUIRED)"
+        exit 1
+    fi
+    if ! apt-mark showmanual | grep -qx "${p}"; then
+        echo "ERROR: ${p} not marked manual — it would be autoremoved on first boot"
+        exit 1
+    fi
+done
+if [[ ! -f /boot/dietpi-wifi.txt ]]; then
+    echo "ERROR: /boot/dietpi-wifi.txt missing — WiFi credentials preseed not generated"
+    exit 1
+fi
+echo "OK: WiFi stack installed, marked manual, dietpi-wifi.txt on the FAT partition"
 echo "=== Conversion complete ==="

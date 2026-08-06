@@ -100,11 +100,12 @@ preseed SURVEY_OPTED_IN 0
 # blacklist and applies /boot/dietpi-wifi.txt — all offline, since the
 # packages ship in the image (WIFI_REQUIRED=1). Users put their SSID/key in
 # dietpi-wifi.txt on the FAT partition before first boot, or use
-# dietpi-config later.
+# dietpi-config later. The regulatory country code keeps DietPi's upstream
+# default (GB): the image is distributed worldwide, so no country of ours
+# is right — users set AUTO_SETUP_NET_WIFI_COUNTRY_CODE in dietpi.txt.
 preseed AUTO_SETUP_NET_WIFI_ENABLED 1
-preseed AUTO_SETUP_NET_WIFI_COUNTRY_CODE FR
 echo "First-run preseed applied:"
-grep -E "^(AUTO_SETUP_AUTOMATED|SURVEY_OPTED_IN|AUTO_SETUP_NET_WIFI_ENABLED|AUTO_SETUP_NET_WIFI_COUNTRY_CODE)=" /boot/dietpi.txt
+grep -E "^(AUTO_SETUP_AUTOMATED|SURVEY_OPTED_IN|AUTO_SETUP_NET_WIFI_ENABLED)=" /boot/dietpi.txt
 
 # DietPi's firstboot enables either WiFi OR Ethernet and comments out the
 # other in /etc/network/interfaces. With WiFi on by default, an

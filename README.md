@@ -61,8 +61,10 @@ is ready. Network is needed once for `dietpi-update` to complete the setup.
   Put your network in `dietpi-wifi.txt` on the FAT partition (readable from
   any OS) before first boot, or run `dietpi-config` later. Set your country
   in `dietpi.txt` (`AUTO_SETUP_NET_WIFI_COUNTRY_CODE`, DietPi upstream
-  default: `GB`). The DietPi firstboot script is patched during conversion
-  so enabling WiFi does *not* disable Ethernet — both interfaces stay
-  active.
+  default: `GB`). DietPi's firstboot sets up WiFi first and falls back to
+  Ethernet automatically when no WiFi interface is present — the normal
+  case here, since this board has no onboard WiFi. If a dongle is already
+  plugged in and working at first boot, Ethernet may need enabling by hand
+  afterward (`dietpi-config` or `dietpi-network`).
 - **USB OTG**: the port exposes a CDC-NCM network gadget (native on macOS
   and Windows 11), SSH via `172.22.1.1`.

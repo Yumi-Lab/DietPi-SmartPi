@@ -104,28 +104,20 @@ preseed SURVEY_OPTED_IN 0
 # default (GB): the image is distributed worldwide, so no country of ours
 # is right — users set AUTO_SETUP_NET_WIFI_COUNTRY_CODE in dietpi.txt.
 preseed AUTO_SETUP_NET_WIFI_ENABLED 1
+# Pin explicitly rather than trust the upstream template default: current
+# DietPi firstboot (dietpi-network apply, called with --force) sets up
+# WiFi first and only falls back to Ethernet if no WiFi interface comes up —
+# it no longer disables the other interface's config the way older DietPi
+# versions did (the allow-hotplug sed this script used to patch here was
+# removed upstream along with that behaviour; see MichaIng/DietPi
+# dietpi/dietpi-network and rootfs/var/lib/dietpi/services/dietpi-firstboot.bash).
+# This board has no onboard WiFi, so the common case — no USB dongle plugged
+# in yet — always falls through to Ethernet. Only a dongle already plugged
+# in and working at first boot leaves Ethernet unconfigured until
+# 'dietpi-config' or 'dietpi-network' is run by hand afterwards.
+preseed AUTO_SETUP_NET_ETHERNET_ENABLED 1
 echo "First-run preseed applied:"
-grep -E "^(AUTO_SETUP_AUTOMATED|SURVEY_OPTED_IN|AUTO_SETUP_NET_WIFI_ENABLED)=" /boot/dietpi.txt
-
-# DietPi's firstboot enables either WiFi OR Ethernet and comments out the
-# other in /etc/network/interfaces. With WiFi on by default, an
-# Ethernet-only user would boot a card whose eth0 is disabled — offline,
-# and the automated first-run setup needs network to finish. Patch the
-# one-shot firstboot script so neither branch disables the other
-# interface: both stay allow-hotplug and ifupdown brings up whichever is
-# connected. The script runs once, at first boot, before any dietpi-update
-# could restore the upstream version.
-FIRSTBOOT=/var/lib/dietpi/services/dietpi-firstboot.bash
-if ! grep -q 'c\\#allow-hotplug' "${FIRSTBOOT}"; then
-    echo "ERROR: interface-disable pattern not found in ${FIRSTBOOT} — DietPi changed the firstboot script, review the WiFi+Ethernet patch"
-    exit 1
-fi
-sed -i 's|c\\#allow-hotplug|c\\allow-hotplug|g' "${FIRSTBOOT}"
-if grep -q 'c\\#allow-hotplug' "${FIRSTBOOT}"; then
-    echo "ERROR: firstboot WiFi+Ethernet patch did not apply"
-    exit 1
-fi
-echo "Firstboot patched: WiFi and Ethernet both stay enabled"
+grep -E "^(AUTO_SETUP_AUTOMATED|SURVEY_OPTED_IN|AUTO_SETUP_NET_WIFI_ENABLED|AUTO_SETUP_NET_ETHERNET_ENABLED)=" /boot/dietpi.txt
 
 # Familiar 'pi' account next to root, following the Raspberry Pi convention:
 # sudo rights plus the hardware groups needed for GPIO/I2C/SPI/serial work.
@@ -179,6 +171,14 @@ if [[ -L /etc/systemd/system/multi-user.target.wants/smartpad-console-rotate.ser
     echo "OK: smartpad-console-rotate.service still enabled"
 elif [[ -f /etc/systemd/system/smartpad-console-rotate.service ]]; then
     echo "NOTE: smartpad-console-rotate.service present but not enabled"
+fi
+# Informational only: confirms the WiFi-first/Ethernet-fallback mechanism
+# this script's AUTO_SETUP_NET_* preseed relies on is still the one DietPi
+# ships. Not fatal, since we no longer patch this script — just a tripwire
+# if upstream reworks firstboot networking again.
+FIRSTBOOT=/var/lib/dietpi/services/dietpi-firstboot.bash
+if [[ -f "${FIRSTBOOT}" ]] && ! grep -q 'AUTO_SETUP_NET_WIFI_ENABLED' "${FIRSTBOOT}"; then
+    echo "NOTE: ${FIRSTBOOT} no longer mentions AUTO_SETUP_NET_WIFI_ENABLED — DietPi may have reworked firstboot networking again, review the WiFi+Ethernet preseed"
 fi
 if [[ -f /boot/dietpi.txt ]]; then
     echo "OK: /boot/dietpi.txt present"

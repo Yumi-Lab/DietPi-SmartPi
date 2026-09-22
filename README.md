@@ -14,14 +14,17 @@ tooling, on top of the SmartPi One custom stack.
    `Yumi-smartpi1-trixie-debian13-server` image from the **latest
    SmartPi-armbian release**.
 2. The image is grown by 2 GB, loop-mounted, and entered with an armhf
-   chroot (qemu-user-static).
+   chroot (qemu-user-static). This runs **once per Debian target** (a
+   matrix job): by default both `DISTRO_TARGET=8` (trixie) and `9` (forky),
+   each from its own copy of the same trixie base image.
 3. [`install.sh`](install.sh) runs the **official DietPi installer**
-   non-interactively with `HW_MODEL=25` (Generic Allwinner H3) and
-   `DISTRO_TARGET=8` (trixie).
-4. The image is shrunk back to its minimal size (+200 MB margin — DietPi
+   non-interactively with `HW_MODEL=25` (Generic Allwinner H3). Targeting
+   `9` has the installer dist-upgrade trixie → forky as part of the
+   conversion.
+4. Each image is shrunk back to its minimal size (+200 MB margin — DietPi
    re-expands to the full SD card on first boot) and repacked following the
    OS builder naming convention:
-   `Yumi-smartpi1-trixie-debian13-dietpi-{timestamp}.img.xz`.
+   `Yumi-smartpi1-{trixie-debian13,forky-debian14}-dietpi-{timestamp}.img.xz`.
 
 ## What survives the conversion
 
@@ -43,10 +46,11 @@ Run the **Convert to DietPi** workflow (Actions tab → Run workflow). Inputs:
 | `artifact_filter` | `smartpi1-trixie-debian13-server` | Base image variant |
 | `dietpi_owner` / `dietpi_branch` | `MichaIng` / `master` | DietPi source |
 | `hw_model` | `25` | DietPi hardware model ID |
-| `distro_target` | `8` (trixie) | Debian target: `7` bookworm, `8` trixie, `9` forky/Debian 14 (**testing**, moving target) |
+| `distro_target` | empty (trixie **and** forky) | Debian target: `7` bookworm, `8` trixie, `9` forky/Debian 14 (**testing**, moving target). Set one explicitly to build only that target |
 
-The converted image is published as a workflow artifact and attached to a
-GitHub release named after the base SmartPi-armbian tag.
+Each target is converted in its own matrix job; the resulting images are
+published as workflow artifacts and attached to a GitHub release named
+after the base SmartPi-armbian tag.
 
 ## First boot
 

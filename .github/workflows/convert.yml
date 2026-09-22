@@ -24,9 +24,9 @@ on:
         required: false
         default: "25"
       distro_target:
-        description: "DietPi Debian target (7 = bookworm, 8 = trixie, 9 = forky/Debian 14 testing)"
+        description: "DietPi Debian target (7 = bookworm, 8 = trixie, 9 = forky/Debian 14 testing; empty = build trixie AND forky)"
         required: false
-        default: "8"
+        default: ""
 
 jobs:
   check:
@@ -34,6 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       base_tag: ${{ steps.check.outputs.base_tag }}
+      targets: ${{ steps.check.outputs.targets }}
     steps:
       - name: Resolve base release
         id: check
@@ -50,13 +51,24 @@ jobs:
           echo "base_tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "Base release: ${TAG}"
 
+          DISTRO="${{ github.event.inputs.distro_target }}"
+          # No explicit target: build the two live DietPi variants. An
+          # explicit target (manual debug run, e.g. bookworm) builds only that one.
+          [[ -z "${DISTRO}" ]] && TARGETS='[8,9]' || TARGETS="[${DISTRO}]"
+          echo "targets=${TARGETS}" >> "$GITHUB_OUTPUT"
+          echo "Distro targets: ${TARGETS}"
+
   convert:
-    name: Convert to DietPi (base ${{ needs.check.outputs.base_tag }})
+    name: Convert to DietPi (base ${{ needs.check.outputs.base_tag }}, distro ${{ matrix.distro_target }})
     runs-on: ubuntu-latest
     timeout-minutes: 180
     needs: check
     permissions:
       contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        distro_target: ${{ fromJson(needs.check.outputs.targets) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -137,7 +149,7 @@ jobs:
             GITOWNER="${{ github.event.inputs.dietpi_owner }}" \
             GITBRANCH="${{ github.event.inputs.dietpi_branch }}" \
             HW_MODEL="${{ github.event.inputs.hw_model }}" \
-            DISTRO_TARGET="${{ github.event.inputs.distro_target || '8' }}" \
+            DISTRO_TARGET="${{ matrix.distro_target }}" \
             bash /install.sh
 
       - name: Cleanup chroot
@@ -192,7 +204,7 @@ jobs:
           fi
           # The base name carries the base image's distro; when the installer
           # dist-upgraded to another Debian, the artifact must say so.
-          case "${{ github.event.inputs.distro_target || '8' }}" in
+          case "${{ matrix.distro_target }}" in
             7) OUT="${OUT/trixie-debian13/bookworm-debian12}" ;;
             9) OUT="${OUT/trixie-debian13/forky-debian14}" ;;
           esac
@@ -219,13 +231,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${{ needs.check.outputs.base_tag }}"
-          if gh release view "${TAG}" --repo "${{ github.repository }}" > /dev/null 2>&1; then
-            echo "Release ${TAG} exists — uploading assets"
-          else
-            gh release create "${TAG}" \
-              --title "DietPi ${TAG}" \
-              --notes "DietPi image converted from SmartPi-armbian ${TAG} (base: ${{ github.event.inputs.artifact_filter || 'smartpi1-trixie-debian13-server' }})." \
-              --repo "${{ github.repository }}"
-          fi
+          # Both distro legs of the matrix publish to this same tag in
+          # parallel — a plain "does it exist?" check-then-create would race.
+          # Try to create it and ignore failure if another leg won the race.
+          gh release create "${TAG}" \
+            --title "DietPi ${TAG}" \
+            --notes "DietPi image converted from SmartPi-armbian ${TAG} (base: ${{ github.event.inputs.artifact_filter || 'smartpi1-trixie-debian13-server' }})." \
+            --repo "${{ github.repository }}" 2>/dev/null || echo "Release ${TAG} already exists"
           gh release upload "${TAG}" work/${{ env.OUT }}.img.xz work/${{ env.OUT }}.img.xz.sha256 \
             --clobber --repo "${{ github.repository }}"

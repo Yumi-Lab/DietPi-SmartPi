@@ -135,8 +135,13 @@ preseed AUTO_SETUP_NET_WIFI_ENABLED 1
 # in and working at first boot leaves Ethernet unconfigured until
 # 'dietpi-config' or 'dietpi-network' is run by hand afterwards.
 preseed AUTO_SETUP_NET_ETHERNET_ENABLED 1
+# Swap in compressed RAM (zram, auto-sized to half the RAM) instead of the
+# ~1 GiB /var/swap file DietPi otherwise allocates on the SD card at first
+# boot: the biggest writer on the card, and a file open for writing at every
+# power cut. The installer already sets AUTO_SETUP_SWAPFILE_SIZE=1 (auto).
+preseed AUTO_SETUP_SWAPFILE_LOCATION zram
 echo "First-run preseed applied:"
-grep -E "^(AUTO_SETUP_AUTOMATED|SURVEY_OPTED_IN|AUTO_SETUP_NET_WIFI_ENABLED|AUTO_SETUP_NET_ETHERNET_ENABLED)=" /boot/dietpi.txt
+grep -E "^(AUTO_SETUP_AUTOMATED|SURVEY_OPTED_IN|AUTO_SETUP_NET_WIFI_ENABLED|AUTO_SETUP_NET_ETHERNET_ENABLED|AUTO_SETUP_SWAPFILE_SIZE|AUTO_SETUP_SWAPFILE_LOCATION)=" /boot/dietpi.txt
 
 # Familiar 'pi' account next to root, following the Raspberry Pi convention:
 # sudo rights plus the hardware groups needed for GPIO/I2C/SPI/serial work.

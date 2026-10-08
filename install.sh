@@ -89,6 +89,11 @@ if [[ -n ${BASE_EXTRAARGS} ]]; then
     MERGED_EXTRAARGS=$(printf '%s\n' $(sed -n 's/^extraargs=//p' /boot/armbianEnv.txt) ${BASE_EXTRAARGS} | awk '!seen[$0]++' | xargs)
     sed -i "s|^extraargs=.*|extraargs=${MERGED_EXTRAARGS}|" /boot/armbianEnv.txt
     echo "Kernel arguments after the installer: $(grep '^extraargs=' /boot/armbianEnv.txt)"
+    # Fatal: losing these went unnoticed for two releases.
+    FINAL_EXTRAARGS=" $(sed -n 's/^extraargs=//p' /boot/armbianEnv.txt) "
+    for arg in ${BASE_EXTRAARGS}; do
+        [[ ${FINAL_EXTRAARGS} == *" ${arg} "* ]] || { echo "ERROR: extraargs lost ${arg} from the base image"; exit 1; }
+    done
 fi
 
 echo "=== DietPi installer finished ==="

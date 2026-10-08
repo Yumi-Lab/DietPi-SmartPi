@@ -35,6 +35,9 @@ replaces them for explicitly listed boards), and `install.sh` additionally
 - U-Boot `smartpi1_defconfig` (DRAM 576 MHz, ZQ, ODT)
 - Kernel 6.18 with the 1368 MHz overclock and `sun8i-h3-smartpi-one.dtb`
 - SmartPad screen auto-detection and 180° rotation (console service)
+- The base image's kernel arguments (1280x720 display mode, simpledrm blacklist for
+  the HDMI console): the installer rewrites `extraargs` in `armbianEnv.txt`, and
+  `install.sh` adds them back next to DietPi's own
 
 ## Usage
 

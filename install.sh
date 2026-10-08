@@ -67,6 +67,12 @@ fi
 # removes our boot logo — keep a copy and put it back afterwards.
 [[ -f /boot/boot.bmp ]] && cp /boot/boot.bmp /tmp/boot.bmp.keep
 
+# The installer replaces the whole extraargs line of armbianEnv.txt to add
+# net.ifnames=0, dropping what the base image puts there for this board (the
+# 1280x720 display mode, the simpledrm blacklist that keeps the HDMI console).
+# Keep the base arguments and add them back to the installer's afterwards.
+BASE_EXTRAARGS=$(sed -n 's/^extraargs=//p' /boot/armbianEnv.txt 2> /dev/null)
+
 # Fetch and run the official DietPi installer
 curl -sSfL "https://raw.githubusercontent.com/${GITOWNER}/DietPi/${GITBRANCH}/.build/images/dietpi-installer" -o /tmp/dietpi-installer
 bash /tmp/dietpi-installer
@@ -75,6 +81,14 @@ if [[ -f /tmp/boot.bmp.keep ]]; then
     cp /tmp/boot.bmp.keep /boot/boot.bmp
     rm -f /tmp/boot.bmp.keep
     echo "Boot logo restored after the installer removed it"
+fi
+
+if [[ -n ${BASE_EXTRAARGS} ]]; then
+    # Word splitting is the point here: one argument per line, duplicates dropped.
+    # shellcheck disable=SC2046,SC2086
+    MERGED_EXTRAARGS=$(printf '%s\n' $(sed -n 's/^extraargs=//p' /boot/armbianEnv.txt) ${BASE_EXTRAARGS} | awk '!seen[$0]++' | xargs)
+    sed -i "s|^extraargs=.*|extraargs=${MERGED_EXTRAARGS}|" /boot/armbianEnv.txt
+    echo "Kernel arguments after the installer: $(grep '^extraargs=' /boot/armbianEnv.txt)"
 fi
 
 echo "=== DietPi installer finished ==="

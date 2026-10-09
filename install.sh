@@ -96,6 +96,17 @@ if [[ -n ${BASE_EXTRAARGS} ]]; then
     done
 fi
 
+# The installer regenerates /etc/fstab from DietPi's own template
+# (dietpi-drive_manager 4), which never puts nofail on /boot: a FAT partition
+# that fsck.fat cannot repair would drop systemd into emergency mode even though
+# the kernel and initramfs it needed are already loaded. Put it back. Only the
+# installer calls that regeneration, nothing on the device does, so the option
+# survives until someone runs dietpi-drive_manager by hand. The proper fix
+# belongs in DietPi's Get_Fstab_Entry.
+sed -i '/[[:space:]]\/boot[[:space:]]/{/nofail/!s/\(vfat[[:space:]][[:space:]]*\)\([^[:space:]][^[:space:]]*\)/\1\2,nofail/;}' /etc/fstab
+grep -q '[[:space:]]/boot[[:space:]].*nofail' /etc/fstab || { echo "ERROR: nofail missing on /boot in fstab"; exit 1; }
+echo "fstab /boot after the installer: $(awk '$2=="/boot"' /etc/fstab)"
+
 echo "=== DietPi installer finished ==="
 
 # Restore the real systemctl

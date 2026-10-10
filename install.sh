@@ -114,8 +114,13 @@ fi
 # installer calls that regeneration, nothing on the device does, so the option
 # survives until someone runs dietpi-drive_manager by hand. The proper fix
 # belongs in DietPi's Get_Fstab_Entry.
-sed -i '/[[:space:]]\/boot[[:space:]]/{/nofail/!s/\(vfat[[:space:]][[:space:]]*\)\([^[:space:]][^[:space:]]*\)/\1\2,nofail/;}' /etc/fstab
-grep -q '[[:space:]]/boot[[:space:]].*nofail' /etc/fstab || { echo "ERROR: nofail missing on /boot in fstab"; exit 1; }
+# nofail alone also drops the mount's ordering before local-fs.target (systemd.mount),
+# so DietPi's boot services, which read /boot, could start before it is mounted
+# (seen on hardware: local-fs.target at 7.3 s, /boot at 9.5 s).
+# x-systemd.before=local-fs.target restores the order without making the boot
+# depend on the mount succeeding.
+sed -i '/[[:space:]]\/boot[[:space:]]/{/nofail/!s/\(vfat[[:space:]][[:space:]]*\)\([^[:space:]][^[:space:]]*\)/\1\2,nofail,x-systemd.before=local-fs.target/;}' /etc/fstab
+grep -q '[[:space:]]/boot[[:space:]].*nofail,x-systemd.before=local-fs.target' /etc/fstab || { echo "ERROR: nofail / ordering missing on /boot in fstab"; exit 1; }
 echo "fstab /boot after the installer: $(awk '$2=="/boot"' /etc/fstab)"
 
 echo "=== DietPi installer finished ==="
@@ -162,6 +167,96 @@ preseed AUTO_SETUP_NET_ETHERNET_ENABLED 1
 # boot: the biggest writer on the card, and a file open for writing at every
 # power cut. The installer already sets AUTO_SETUP_SWAPFILE_SIZE=1 (auto).
 preseed AUTO_SETUP_SWAPFILE_LOCATION zram
+# One serial console, not 32. The installer runs in a chroot that sees the build
+# host's /dev, where /dev/ttyS0 to ttyS31 exist, and enables a serial getty for
+# each. The SmartPi has one UART console, ttyS0: at boot systemd waited 90 s
+# for the 31 others ("A start job is running for dev-ttyS..."), then gave up.
+for unit in /etc/systemd/system/getty.target.wants/serial-getty@ttyS*.service; do
+    [[ -e $unit || -L $unit ]] || continue
+    [[ $unit == */serial-getty@ttyS0.service ]] || rm -f "$unit"
+done
+extra=$(find /etc/systemd/system/getty.target.wants -name 'serial-getty@ttyS*.service' ! -name 'serial-getty@ttyS0.service' | wc -l)
+(( extra == 0 )) || { echo "ERROR: ${extra} extra serial consoles still enabled"; exit 1; }
+echo "OK: serial console on ttyS0 only"
+
+# First run that never needs the network.
+# DietPi's first run starts by checking raw.githubusercontent.com for a newer
+# DietPi, which the Great Firewall resets ("Connection reset by peer"): the
+# setup failed and looped on every board booted in China. Without any network
+# it failed too, on its connectivity check, its time sync and APT. Everything
+# the first run would download is already in this image, fetched at conversion
+# time, so the first run is made fully local, with no wait at boot:
+# - yumi-firstrun.service, right after dietpi-firstboot, skips the DietPi code
+#   update (install stage 0 -> 1) and marks the APT lists as fresh;
+# - dietpi.txt points the connectivity test at the board itself and pauses the
+#   time sync mode for the first run only, and the distro upgrade is skipped;
+# - /boot/Automation_Custom_Script.sh, which DietPi runs at the end of the
+#   first run, puts the real settings back and re-applies the time sync mode
+#   (yumi-firstrun.service does it on the next boot if that hook was replaced).
+# If AUTO_SETUP_INSTALL_SOFTWARE_ID asks for software, APT is refreshed as usual.
+mkdir -p /usr/local/sbin /var/lib/yumi
+cat > /usr/local/sbin/yumi-firstrun <<'FIRSTRUN'
+#!/bin/bash
+# Keeps DietPi's first run local; "restore" puts the real settings back.
+set -u
+STAGE_FILE=/boot/dietpi/.install_stage
+CFG=/boot/dietpi.txt
+STATE=/var/lib/yumi/firstrun.env
+HOOK=/boot/Automation_Custom_Script.sh
+HOOK_MARK='# yumi-firstrun restore hook'
+
+restore() {
+    if [[ -f $STATE ]]; then
+        # shellcheck disable=SC1090
+        . "$STATE"
+        sed -i "s|^CONFIG_CHECK_CONNECTION_IP=.*|CONFIG_CHECK_CONNECTION_IP=${CONNECTION_IP}|; s|^CONFIG_CHECK_DNS_DOMAIN=.*|CONFIG_CHECK_DNS_DOMAIN=${DNS_DOMAIN}|; s|^CONFIG_NTP_MODE=.*|CONFIG_NTP_MODE=${NTP_MODE}|" "$CFG"
+        /boot/dietpi/func/dietpi-set_software ntpd-mode "${NTP_MODE}" > /dev/null 2>&1 || true
+        # The first run ran with time sync paused: sync now rather than at the next boot.
+        [[ $NTP_MODE == [1-4] ]] && systemctl --no-block start systemd-timesyncd
+        rm -f "$STATE"
+        echo "yumi-firstrun: settings restored (${CONNECTION_IP}, ${DNS_DOMAIN}, time sync mode ${NTP_MODE})"
+    fi
+    if grep -qF "$HOOK_MARK" "$HOOK" 2> /dev/null; then rm -f "$HOOK"; fi
+}
+
+[[ ${1:-} == 'restore' ]] && { restore; exit 0; }
+stage=$(cat "$STAGE_FILE" 2> /dev/null || echo -1)
+[[ $stage == 2 ]] && { restore; exit 0; }
+[[ $stage == 0 ]] && { echo 1 > "$STAGE_FILE"; echo "yumi-firstrun: DietPi code update skipped, the image carries it"; }
+if ! grep -qE '^[[:blank:]]*AUTO_SETUP_INSTALL_SOFTWARE_ID=[0-9]' "$CFG"; then
+    mkdir -p /var/lib/apt/lists/partial && touch /var/lib/apt/lists/partial
+fi
+FIRSTRUN
+chmod 755 /usr/local/sbin/yumi-firstrun
+cat > /etc/systemd/system/yumi-firstrun.service <<'UNIT'
+[Unit]
+Description=Keep DietPi's first run local (no GitHub, no network needed)
+After=dietpi-firstboot.service
+RequiresMountsFor=/boot
+Before=getty@tty1.service serial-getty@ttyS0.service getty.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/yumi-firstrun
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+mkdir -p /etc/systemd/system/multi-user.target.wants
+ln -sf /etc/systemd/system/yumi-firstrun.service /etc/systemd/system/multi-user.target.wants/yumi-firstrun.service
+printf 'CONNECTION_IP=%s\nDNS_DOMAIN=%s\nNTP_MODE=%s\n' \
+    "$(sed -n 's/^CONFIG_CHECK_CONNECTION_IP=//p' /boot/dietpi.txt)" \
+    "$(sed -n 's/^CONFIG_CHECK_DNS_DOMAIN=//p' /boot/dietpi.txt)" \
+    "$(sed -n 's/^CONFIG_NTP_MODE=//p' /boot/dietpi.txt)" > /var/lib/yumi/firstrun.env
+grep -qE '^CONNECTION_IP=.+' /var/lib/yumi/firstrun.env && grep -qE '^DNS_DOMAIN=.+' /var/lib/yumi/firstrun.env && grep -qE '^NTP_MODE=[0-9]' /var/lib/yumi/firstrun.env || { echo "ERROR: could not read the connectivity and time sync settings from dietpi.txt"; cat /var/lib/yumi/firstrun.env; exit 1; }
+preseed CONFIG_CHECK_CONNECTION_IP 127.0.0.1
+preseed CONFIG_CHECK_DNS_DOMAIN localhost
+preseed CONFIG_NTP_MODE 0
+: > /boot/dietpi/.skip_distro_upgrade
+[[ -e /boot/Automation_Custom_Script.sh ]] || printf '#!/bin/bash\n# yumi-firstrun restore hook\n/usr/local/sbin/yumi-firstrun restore\n' > /boot/Automation_Custom_Script.sh
+[[ -x /usr/local/sbin/yumi-firstrun && -L /etc/systemd/system/multi-user.target.wants/yumi-firstrun.service && -f /boot/Automation_Custom_Script.sh ]] || { echo "ERROR: yumi-firstrun not installed"; exit 1; }
+echo "OK: first run made local (saved: $(tr '\n' ' ' < /var/lib/yumi/firstrun.env))"
+
 echo "First-run preseed applied:"
 grep -E "^(AUTO_SETUP_AUTOMATED|SURVEY_OPTED_IN|AUTO_SETUP_NET_WIFI_ENABLED|AUTO_SETUP_NET_ETHERNET_ENABLED|AUTO_SETUP_SWAPFILE_SIZE|AUTO_SETUP_SWAPFILE_LOCATION)=" /boot/dietpi.txt
 

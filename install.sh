@@ -73,6 +73,17 @@ fi
 # Keep the base arguments and add them back to the installer's afterwards.
 BASE_EXTRAARGS=$(sed -n 's/^extraargs=//p' /boot/armbianEnv.txt 2> /dev/null)
 
+# The base image configures its first boot through cloud-init (user-data and
+# network-config on the boot partition). DietPi has its own (dietpi.txt,
+# dietpi-wifi.txt): left in place, cloud-init would also run on the first boot
+# and set its own hostname, accounts and network over DietPi's. Remove it and
+# its files so the boot partition only shows DietPi's.
+if dpkg-query -W -f='${Status}' cloud-init 2> /dev/null | grep -q 'install ok installed'; then
+    apt-get purge -y cloud-init
+fi
+rm -rf /etc/cloud /var/lib/cloud
+rm -f /boot/user-data /boot/network-config /boot/meta-data /boot/*.template
+
 # Fetch and run the official DietPi installer
 curl -sSfL "https://raw.githubusercontent.com/${GITOWNER}/DietPi/${GITBRANCH}/.build/images/dietpi-installer" -o /tmp/dietpi-installer
 bash /tmp/dietpi-installer

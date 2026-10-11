@@ -257,6 +257,17 @@ preseed CONFIG_NTP_MODE 0
 [[ -x /usr/local/sbin/yumi-firstrun && -L /etc/systemd/system/multi-user.target.wants/yumi-firstrun.service && -f /boot/Automation_Custom_Script.sh ]] || { echo "ERROR: yumi-firstrun not installed"; exit 1; }
 echo "OK: first run made local (saved: $(tr '\n' ' ' < /var/lib/yumi/firstrun.env))"
 
+# Never hold the boot on DHCP. ifup waits for a lease, for 60 s by dhclient's
+# default, and the boot waits for ifup: dietpi-firstboot runs it directly, and
+# dietpi-postboot waits for network-online.target, which ifup@ comes before. A
+# WiFi dongle with no network set, or Ethernet with no cable, held every boot
+# for a minute with DHCPDISCOVER on the screen. A few seconds cover a normal
+# WiFi association; past that, dhclient keeps trying in the background.
+DHCP_TIMEOUT=5 DHCP_RETRY=10
+printf 'timeout %s;\nretry %s;\n' "${DHCP_TIMEOUT}" "${DHCP_RETRY}" >> /etc/dhcp/dhclient.conf
+grep -qx "timeout ${DHCP_TIMEOUT};" /etc/dhcp/dhclient.conf || { echo "ERROR: DHCP timeout not set"; exit 1; }
+echo "OK: DHCP gives up after ${DHCP_TIMEOUT} s and retries every ${DHCP_RETRY} s in the background"
+
 echo "First-run preseed applied:"
 grep -E "^(AUTO_SETUP_AUTOMATED|SURVEY_OPTED_IN|AUTO_SETUP_NET_WIFI_ENABLED|AUTO_SETUP_NET_ETHERNET_ENABLED|AUTO_SETUP_SWAPFILE_SIZE|AUTO_SETUP_SWAPFILE_LOCATION)=" /boot/dietpi.txt
 

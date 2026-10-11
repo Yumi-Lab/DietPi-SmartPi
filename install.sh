@@ -308,12 +308,14 @@ apt-mark showhold
 # USB WiFi 6 + Bluetooth dongles: the base image carries their driver and
 # firmware (SmartPi-armbian's aic8800-usb extension), but the installer purges
 # every package outside its own list, usb-modeswitch and bluez among them, and
-# turns Bluetooth off on every board. Turn it back on the DietPi way (reinstalls
-# bluez, enables the service), and bring back usb-modeswitch, which switches
-# AIC8800 dongles out of their fake driver disk.
+# turns Bluetooth off on every board. Turn it back on as dietpi-set_hardware
+# does for this board (reinstall, drop its flag file, enable the service), minus
+# its "enable --now", which fails in this chroot. usb-modeswitch switches AIC8800
+# dongles out of their fake driver disk.
 DONGLE_PACKAGES=(usb-modeswitch bluez)
-/boot/dietpi/func/dietpi-set_hardware bluetooth enable
-apt-get install -y --no-install-recommends usb-modeswitch
+apt-get install -y --no-install-recommends "${DONGLE_PACKAGES[@]}"
+rm -f /etc/modprobe.d/dietpi-disable_bluetooth.conf
+systemctl enable bluetooth
 
 # Sanity checks. Only a missing dietpi.txt is fatal — everything else is
 # informational so a debug run still produces an inspectable image.

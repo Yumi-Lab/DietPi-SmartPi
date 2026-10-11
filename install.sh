@@ -299,6 +299,16 @@ dpkg-query -Wf '${db:Status-Status} ${Package}\n' 'linux-image-*' 'linux-dtb-*' 
 echo "Held packages after install:"
 apt-mark showhold
 
+# USB WiFi 6 + Bluetooth dongles: the base image carries their driver and
+# firmware (SmartPi-armbian's aic8800-usb extension), but the installer purges
+# every package outside its own list, usb-modeswitch and bluez among them, and
+# turns Bluetooth off on every board. Turn it back on the DietPi way (reinstalls
+# bluez, enables the service), and bring back usb-modeswitch, which switches
+# AIC8800 dongles out of their fake driver disk.
+DONGLE_PACKAGES=(usb-modeswitch bluez)
+/boot/dietpi/func/dietpi-set_hardware bluetooth enable
+apt-get install -y --no-install-recommends usb-modeswitch
+
 # Sanity checks. Only a missing dietpi.txt is fatal — everything else is
 # informational so a debug run still produces an inspectable image.
 echo "=== Post-conversion sanity checks ==="
@@ -342,9 +352,9 @@ fi
 # first dietpi-update autoremove on the device purges it), with the
 # credentials file on the FAT partition. This is what makes a USB dongle
 # usable offline — a regression here once shipped silently, so it is fatal.
-for p in wpasupplicant iw wireless-regdb; do
+for p in wpasupplicant iw wireless-regdb "${DONGLE_PACKAGES[@]}"; do
     if ! dpkg-query -s "${p}" > /dev/null 2>&1; then
-        echo "ERROR: ${p} not installed — WiFi stack missing (check WIFI_REQUIRED)"
+        echo "ERROR: ${p} not installed — WiFi/dongle stack missing (check WIFI_REQUIRED and the base image)"
         exit 1
     fi
     if ! apt-mark showmanual | grep -qx "${p}"; then
@@ -356,5 +366,16 @@ if [[ ! -f /boot/dietpi-wifi.txt ]]; then
     echo "ERROR: /boot/dietpi-wifi.txt missing — WiFi credentials preseed not generated"
     exit 1
 fi
-echo "OK: WiFi stack installed, marked manual, dietpi-wifi.txt on the FAT partition"
+echo "OK: WiFi and dongle stack installed, marked manual, dietpi-wifi.txt on the FAT partition"
+if [[ -f /etc/modprobe.d/dietpi-disable_bluetooth.conf ]] || [[ ! -L /etc/systemd/system/bluetooth.target.wants/bluetooth.service ]]; then
+    echo "ERROR: Bluetooth still disabled — a USB Bluetooth dongle would not work"
+    exit 1
+fi
+echo "OK: Bluetooth enabled for USB dongles"
+# Plug and boot: the first run must set itself up with no menu.
+if ! grep -qx 'AUTO_SETUP_AUTOMATED=1' /boot/dietpi.txt; then
+    echo "ERROR: AUTO_SETUP_AUTOMATED=1 missing — the first run would stop on DietPi's menus"
+    exit 1
+fi
+echo "OK: automated first run (no menu)"
 echo "=== Conversion complete ==="

@@ -313,7 +313,10 @@ apt-mark showhold
 # its "enable --now", which fails in this chroot. usb-modeswitch switches AIC8800
 # dongles out of their fake driver disk.
 DONGLE_PACKAGES=(usb-modeswitch bluez)
+# The installer leaves the package lists empty: fetch them, then leave them empty again.
+apt-get update
 apt-get install -y --no-install-recommends "${DONGLE_PACKAGES[@]}"
+apt-get clean && rm -rf /var/lib/apt/lists/*
 rm -f /etc/modprobe.d/dietpi-disable_bluetooth.conf
 systemctl enable bluetooth
 

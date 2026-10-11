@@ -224,7 +224,13 @@ stage=$(cat "$STAGE_FILE" 2> /dev/null || echo -1)
 [[ $stage == 2 ]] && { restore; exit 0; }
 [[ $stage == 0 ]] && { echo 1 > "$STAGE_FILE"; echo "yumi-firstrun: DietPi code update skipped, the image carries it"; }
 if ! grep -qE '^[[:blank:]]*AUTO_SETUP_INSTALL_SOFTWARE_ID=[0-9]' "$CFG"; then
-    mkdir -p /var/lib/apt/lists/partial && touch /var/lib/apt/lists/partial
+    # DietPi skips its APT update only if lists/partial is under an hour old AND
+    # newer than every sources list and /var/lib/dpkg/arch. With no RTC, the
+    # first-boot clock can lag behind files the conversion wrote (seen: 02:38 on
+    # the board, dietpi-armbian.list at 03:46): stamp partial past the newest.
+    newest=$(stat -c %Y /etc/apt/sources.list /etc/apt/sources.list.d/* /var/lib/dpkg/arch 2> /dev/null | sort -n | tail -n 1)
+    now=$(date +%s); (( ${newest:-0} > now )) || newest=$now
+    mkdir -p /var/lib/apt/lists/partial && touch -d "@$(( newest + 1 ))" /var/lib/apt/lists/partial
 fi
 FIRSTRUN
 chmod 755 /usr/local/sbin/yumi-firstrun
